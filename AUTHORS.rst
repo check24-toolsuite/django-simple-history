@@ -42,6 +42,7 @@ Authors
 - David Smith
 - `ddabble <https://github.com/ddabble>`_
 - Dmytro Shyshov (`xahgmah <https://github.com/xahgmah>`_)
+- `Dominik Bissinger <https://github.com/Nihongasuki>`_
 - Edouard Richard (`vied12 <https://github.com/vied12>` _)
 - Eduardo Cuducos
 - Erik van Widenfelt (`erikvw <https://github.com/erikvw>`_)

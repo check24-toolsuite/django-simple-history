@@ -162,6 +162,8 @@ reverse relationships.
 
 See the `HistoricForeignKeyTest` code and models for an example.
 
+Equivalent functionality is provided for OneToOneFields with HistoricOneToOneField.
+
 
 HistoricOneToOneField
 ---------------------

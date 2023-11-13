@@ -113,6 +113,11 @@ from ..models import (
     TestHistoricParticipanToHistoricOrganizationOneToOne,
     TestHistoricParticipantToOrganization,
     TestHistoricParticipantToOrganizationOneToOne,
+    TestOneToOneLeftHistoricToRight,
+    TestOneToOneLeftHistoricToRightHistoric,
+    TestOneToOneLeftToRightHistoric,
+    TestOneToOneRight,
+    TestOneToOneRightHistoric,
     TestOrganization,
     TestOrganizationWithHistory,
     TestParticipantToHistoricOrganization,
@@ -2985,3 +2990,188 @@ class HistoricOneToOneFieldTest(TestCase):
         )
         pt1i = pt1h.instance
         self.assertEqual(pt1i.organization.name, "original")
+
+
+class HistoricOneToOneFieldTest2(TestCase):
+    """
+    Tests chasing one-to-one fields across time points naturally with
+    HistoricOneToOneField.
+    """
+
+    def test_non_historic_to_historic(self):
+        """
+        Non-historic table one-to-one field to historic table.
+
+        In this case it should simply behave like OneToOneField because
+        the origin model (this one) cannot be historic, so one-to-one field
+        lookups are always "current".
+        """
+        right = TestOneToOneRightHistoric.objects.create(name="right")
+        left = TestOneToOneLeftToRightHistoric.objects.create(name="left", right=right)
+        before_mod = timezone.now()
+
+        # non-historic relation
+        self.assertEqual(left.right.name, right.name)
+        self.assertEqual(right.left.name, left.name)
+
+        # historic right
+        hist_right = TestOneToOneRightHistoric.history.as_of(before_mod).get(
+            pk=right.pk
+        )
+        self.assertEqual(left.right.name, hist_right.name)
+        self.assertEqual(hist_right.left.name, left.name)
+
+        # modify right
+        self.assertEqual(right.history.count(), 1)
+        right.name = "modified"
+        right.save()
+        self.assertEqual(right.history.count(), 2)
+
+        # reload from db, all values should be current
+        right = TestOneToOneRightHistoric.objects.get(pk=right.pk)
+        left = TestOneToOneLeftToRightHistoric.objects.get(pk=left.pk)
+        hist_right = TestOneToOneRightHistoric.history.as_of(before_mod).get(
+            pk=right.pk
+        )
+        self.assertEqual(left.right.name, right.name)
+        self.assertEqual(right.left.name, left.name)
+        self.assertNotEqual(left.right.name, hist_right.name)
+        self.assertEqual(hist_right.left.name, left.name)
+
+        # delete left
+        left.delete()
+        right = TestOneToOneRightHistoric.objects.get(pk=right.pk)
+        hist_right = TestOneToOneRightHistoric.history.as_of(before_mod).get(
+            pk=right.pk
+        )
+        self.assertRaises(ObjectDoesNotExist, lambda: right.left)
+        self.assertRaises(ObjectDoesNotExist, lambda: hist_right.left)
+
+    def test_historic_to_non_historic(self):
+        """
+        Historic table one-to-one field to non-historic table.
+
+        In this case it should simply behave like OneToOneField because
+        the origin model (this one) can be historic but the target model
+        is not, so one-to-one field lookups are always "current".
+        """
+        right = TestOneToOneRight.objects.create(name="right")
+        left = TestOneToOneLeftHistoricToRight.objects.create(name="left", right=right)
+        before_mod = timezone.now()
+
+        # non-historic relation
+        self.assertEqual(left.right.name, right.name)
+        self.assertEqual(right.left.name, left.name)
+
+        # historic left
+        hist_left = TestOneToOneLeftHistoricToRight.history.as_of(before_mod).get(
+            pk=left.pk
+        )
+        self.assertEqual(hist_left.right.name, right.name)
+        self.assertEqual(right.left.name, hist_left.name)
+
+        # modify left
+        self.assertEqual(left.history.count(), 1)
+        left.name = "modified"
+        left.save()
+        self.assertEqual(left.history.count(), 2)
+
+        # reload from db, all values should be current
+        right = TestOneToOneRight.objects.get(pk=right.pk)
+        left = TestOneToOneLeftHistoricToRight.objects.get(pk=left.pk)
+        hist_left = TestOneToOneLeftHistoricToRight.history.as_of(before_mod).get(
+            pk=left.pk
+        )
+        self.assertEqual(left.right.name, right.name)
+        self.assertEqual(right.left.name, left.name)
+        self.assertEqual(hist_left.right.name, right.name)
+        self.assertNotEqual(right.left.name, hist_left.name)
+
+        # delete right
+        right.delete()
+        left = TestOneToOneLeftHistoricToRight.objects.get(pk=left.pk)
+        hist_left = TestOneToOneLeftHistoricToRight.history.as_of(before_mod).get(
+            pk=left.pk
+        )
+        self.assertIsNone(left.right)
+        self.assertRaises(ObjectDoesNotExist, lambda: hist_left.right)
+
+    def test_historic_to_historic(self):
+        """
+        Historic table one-to-one field to historic table.
+
+        In this case as_of queries on the origin model (this one)
+        or on the target model (the other one) will traverse the
+        one-to-one field relationship honoring the timepoint of the
+        original query. This only happens when both tables involved
+        are historic.
+
+        At t1 we have right and left.
+        At t2 we have right and left_changed.
+        At t3 we have right_changed and left_changed.
+        At t4 we have right_changed and left deleted.
+        At t5 we have right deleted and left_changed.
+        At t6 we have right_changed and left_changed.
+        """
+        right = TestOneToOneRightHistoric.objects.create(name="right")
+        left = TestOneToOneLeftHistoricToRightHistoric.objects.create(
+            name="left", right=right
+        )
+        left_pk = left.pk
+        right_pk = right.pk
+
+        # no changes
+        t1 = timezone.now()
+
+        # change left
+        left.name = "left_changed"
+        left.save()
+        t2 = timezone.now()
+
+        # change right
+        right.name = "right_changed"
+        right.save()
+        t3 = timezone.now()
+
+        # delete left
+        left.delete()
+        t4 = timezone.now()
+
+        # restore left, delete right
+        left.pk = left_pk
+        left.save()
+        right.delete()
+        t5 = timezone.now()
+
+        # restore right, both changed
+        right.pk = right_pk
+        right.save()
+        t6 = timezone.now()
+
+        def get_as_of_time(time):
+            return (
+                TestOneToOneLeftHistoricToRightHistoric.history.as_of(time)
+                .filter(pk=left_pk)
+                .first(),
+                TestOneToOneRightHistoric.history.as_of(time)
+                .filter(pk=right_pk)
+                .first(),
+            )
+
+        # historic access should always match when following relations
+        for time in [t1, t2, t3, t6]:
+            left_t, right_t = get_as_of_time(time)
+            self.assertEqual(left_t.right.name, right_t.name)
+            self.assertEqual(right_t.left_historic.name, left_t.name)
+
+        # at t4 left is deleted, right is changed
+        left_t4, right_t4 = get_as_of_time(t4)
+        self.assertIsNone(left_t4)
+        self.assertRaises(ObjectDoesNotExist, lambda: right_t4.left_historic)
+
+        # at t5 left is restored, right is deleted
+        left_t5, right_t5 = get_as_of_time(t5)
+        # This should be assertIsNone, but since SET_NULL doesn't work,
+        # ObjectDoesNotExist is raised instead.
+        self.assertRaises(ObjectDoesNotExist, lambda: left_t5.right)
+        self.assertIsNone(right_t5)

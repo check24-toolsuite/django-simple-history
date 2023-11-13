@@ -13,6 +13,7 @@ Unreleased
 - Dropped support for Python 3.8, which reached end-of-life on 2024-10-07 (gh-1421)
 - Added support for Django 5.1 (gh-1388)
 - Added pagination to ``SimpleHistoryAdmin`` (gh-1277)
+- Add HistoricOneToOneField
 
 3.7.0 (2024-05-29)
 ------------------
