@@ -4,12 +4,16 @@ import uuid
 from django.apps import apps
 from django.conf import settings
 from django.db import models
-from django.db.models.deletion import CASCADE
+from django.db.models.deletion import CASCADE, SET_NULL
 from django.db.models.fields.related import ForeignKey
 from django.urls import reverse
 
 from simple_history import register
-from simple_history.models import HistoricalRecords, HistoricForeignKey
+from simple_history.models import (
+    HistoricalRecords,
+    HistoricForeignKey,
+    HistoricOneToOneField,
+)
 
 from .custom_user.models import CustomUser as User
 from .external.models import AbstractExternal, AbstractExternal2, AbstractExternal3
@@ -961,5 +965,42 @@ class TestHistoricParticipanToHistoricOrganization(models.Model):
         TestOrganizationWithHistory,
         on_delete=CASCADE,
         related_name="historic_participants",
+    )
+    history = HistoricalRecords()
+
+
+# Test classes for HistoricOneToOneField
+class TestOneToOneRight(models.Model):
+    name = models.CharField(max_length=15, unique=True)
+
+
+class TestOneToOneRightHistoric(models.Model):
+    name = models.CharField(max_length=15, unique=True)
+    history = HistoricalRecords()
+
+
+class TestOneToOneLeftToRightHistoric(models.Model):
+    name = models.CharField(max_length=15, unique=True)
+    right = HistoricOneToOneField(
+        TestOneToOneRightHistoric, on_delete=SET_NULL, null=True, related_name="left"
+    )
+
+
+class TestOneToOneLeftHistoricToRight(models.Model):
+    name = models.CharField(max_length=15, unique=True)
+    right = HistoricOneToOneField(
+        TestOneToOneRight, on_delete=SET_NULL, null=True, related_name="left"
+    )
+    history = HistoricalRecords()
+
+
+class TestOneToOneLeftHistoricToRightHistoric(models.Model):
+    name = models.CharField(max_length=15, unique=True)
+    right = HistoricOneToOneField(
+        TestOneToOneRightHistoric,
+        on_delete=SET_NULL,
+        null=True,
+        # must differ from TestOneToOneLeftToRightHistoric
+        related_name="left_historic",
     )
     history = HistoricalRecords()
