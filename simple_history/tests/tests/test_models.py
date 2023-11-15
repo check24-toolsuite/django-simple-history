@@ -113,6 +113,9 @@ from ..models import (
     TestHistoricParticipanToHistoricOrganizationOneToOne,
     TestHistoricParticipantToOrganization,
     TestHistoricParticipantToOrganizationOneToOne,
+    TestManyToManyLeftHistoricToRightHistoric,
+    TestManyToManyLeftHistoricToRightHistoricNoReverse,
+    TestManyToManyRightHistoric,
     TestOrganization,
     TestOrganizationWithHistory,
     TestParticipantToHistoricOrganization,
@@ -2985,3 +2988,178 @@ class HistoricOneToOneFieldTest(TestCase):
         )
         pt1i = pt1h.instance
         self.assertEqual(pt1i.organization.name, "original")
+
+
+class HistoricManyToManyFieldTest(TestCase):
+    """
+    Tests chasing many-to-many fields across time points naturally with
+    HistoricManyToManyField.
+    """
+
+    def test_historic_forward_access(self):
+        """
+        Historic table many-to-many field to historic table - forwards.
+
+        In this case as_of queries on the origin model (this one) will
+        traverse the one-to-one field relationship honoring the timepoint
+        of the original query.
+        This only happens when both tables involved are historic.
+
+        At t1 we have left and no rights.
+        At t2 we have left and right1.
+        At t3 we have left and right1, right2.
+        At t4 we have left and right2.
+        """
+        right_1 = TestManyToManyRightHistoric.objects.create(name="right_1")
+        right_2 = TestManyToManyRightHistoric.objects.create(name="right_2")
+        left = TestManyToManyLeftHistoricToRightHistoric.objects.create(name="left")
+        left_pk = left.pk
+
+        # no changes
+        t1 = timezone.now()
+
+        # add right1
+        left.rights.add(right_1)
+        t2 = timezone.now()
+
+        # add right2
+        left.rights.add(right_2)
+        t3 = timezone.now()
+
+        # remove right1
+        left.rights.remove(right_1)
+        t4 = timezone.now()
+
+        # test no rights when t1
+        left_t1 = TestManyToManyLeftHistoricToRightHistoric.history.as_of(t1).get(
+            pk=left_pk
+        )
+        self.assertQuerySetEqual(left_t1.rights.all(), [])
+
+        # test one right when t2
+        left_t2 = TestManyToManyLeftHistoricToRightHistoric.history.as_of(t2).get(
+            pk=left_pk
+        )
+        self.assertQuerySetEqual(left_t2.rights.all(), [right_1])
+
+        # test two rights when t3
+        left_t3 = TestManyToManyLeftHistoricToRightHistoric.history.as_of(t3).get(
+            pk=left_pk
+        )
+        self.assertQuerySetEqual(left_t3.rights.all(), [right_2, right_1])
+
+        # test one right when t4
+        left_t4 = TestManyToManyLeftHistoricToRightHistoric.history.as_of(t4).get(
+            pk=left_pk
+        )
+        self.assertQuerySetEqual(left_t4.rights.all(), [right_2])
+
+    def test_historic_reverse_access(self):
+        """
+        Historic table many-to-many field to historic table - reverse.
+
+        In this case as_of queries on the target model (the other one)
+        will traverse the one-to-one field relationship honoring the
+        timepoint of the original query.
+        This only happens when both tables involved are historic.
+
+        At t1 we have right and no lefts.
+        At t2 we have right and left1.
+        At t3 we have right and left1, left2.
+        At t4 we have right and left2.
+        """
+        right = TestManyToManyRightHistoric.objects.create(name="right")
+        left_1 = TestManyToManyLeftHistoricToRightHistoric.objects.create(name="left_1")
+        left_2 = TestManyToManyLeftHistoricToRightHistoric.objects.create(name="left_2")
+        right_pk = right.pk
+
+        # no changes
+        t1 = timezone.now()
+
+        # add left1
+        right.lefts.add(left_1)
+        t2 = timezone.now()
+
+        # add left2
+        right.lefts.add(left_2)
+        t3 = timezone.now()
+
+        # remove left1
+        right.lefts.remove(left_1)
+        t4 = timezone.now()
+
+        # test no lefts when t1
+        right_t1 = TestManyToManyRightHistoric.history.as_of(t1).get(pk=right_pk)
+        self.assertQuerySetEqual(right_t1.lefts.all(), [])
+
+        # test one left when t2
+        right_t2 = TestManyToManyRightHistoric.history.as_of(t2).get(pk=right_pk)
+        self.assertQuerySetEqual(right_t2.lefts.all(), [left_1])
+
+        # test two lefts when t3
+        right_t3 = TestManyToManyRightHistoric.history.as_of(t3).get(pk=right_pk)
+        self.assertQuerySetEqual(right_t3.lefts.all(), [left_2, left_1])
+
+        # test one left when t4
+        right_t4 = TestManyToManyRightHistoric.history.as_of(t4).get(pk=right_pk)
+        self.assertQuerySetEqual(right_t4.lefts.all(), [left_2])
+
+    def test_historic_forward_access_no_reverse(self):
+        """
+        Historic table many-to-many field to historic table - forwards.
+
+        In this case as_of queries on the origin model (this one) will
+        traverse the one-to-one field relationship honoring the timepoint
+        of the original query.
+        This only happens when both tables involved are historic.
+
+        At t1 we have left and no rights.
+        At t2 we have left and right1.
+        At t3 we have left and right1, right2.
+        At t4 we have left and right2.
+        """
+        right_1 = TestManyToManyRightHistoric.objects.create(name="right_1")
+        right_2 = TestManyToManyRightHistoric.objects.create(name="right_2")
+        left = TestManyToManyLeftHistoricToRightHistoricNoReverse.objects.create(
+            name="left"
+        )
+        left_pk = left.pk
+
+        # no changes
+        t1 = timezone.now()
+
+        # add right1
+        left.rights.add(right_1)
+        t2 = timezone.now()
+
+        # add right2
+        left.rights.add(right_2)
+        t3 = timezone.now()
+
+        # remove right1
+        left.rights.remove(right_1)
+        t4 = timezone.now()
+
+        # test no rights when t1
+        left_t1 = TestManyToManyLeftHistoricToRightHistoricNoReverse.history.as_of(
+            t1
+        ).get(pk=left_pk)
+        self.assertQuerySetEqual(left_t1.rights.all(), [])
+
+        # test one right when t2
+        left_t2 = TestManyToManyLeftHistoricToRightHistoricNoReverse.history.as_of(
+            t2
+        ).get(pk=left_pk)
+        self.assertQuerySetEqual(left_t2.rights.all(), [right_1])
+
+        # test two rights when t3
+        left_t3 = TestManyToManyLeftHistoricToRightHistoricNoReverse.history.as_of(
+            t3
+        ).get(pk=left_pk)
+        self.assertQuerySetEqual(left_t3.rights.all(), [right_2, right_1])
+
+        # test one right when t4
+        left_t4 = TestManyToManyLeftHistoricToRightHistoricNoReverse.history.as_of(
+            t4
+        ).get(pk=left_pk)
+        self.assertQuerySetEqual(left_t4.rights.all(), [right_2])
