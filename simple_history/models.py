@@ -16,6 +16,7 @@ from django.db.models.fields.related import ForeignKey
 from django.db.models.fields.related_descriptors import (
     ForwardManyToOneDescriptor,
     ForwardOneToOneDescriptor,
+    ManyToManyDescriptor,
     ReverseManyToOneDescriptor,
     ReverseOneToOneDescriptor,
     create_reverse_many_to_one_manager,
@@ -965,6 +966,113 @@ class HistoricOneToOneField(models.OneToOneField):
 
     forward_related_accessor_class = HistoricForwardOneToOneDescriptor
     related_accessor_class = HistoricReverseOneToOneDescriptor
+
+
+class HistoricManyToManyDescriptor(ManyToManyDescriptor):
+    @cached_property
+    def related_manager_cls(self):
+        ManyRelatedManager = super().related_manager_cls
+
+        class HistoricManyRelatedManager(ManyRelatedManager):
+            def __init__(self, instance=None):
+                super().__init__(instance)
+                self.base_core_filters = self.core_filters
+
+            def _apply_rel_filters(self, queryset):
+                """Update core filters for current access before applying them.
+
+                If the instance is historic and the other side of the relation also
+                uses a history manager, replace the queryset with a historic one,
+                and filter it according to if the relation is forward or reverse.
+                """
+                history = getattr(self.instance, SIMPLE_HISTORY_REVERSE_ATTR_NAME, None)
+                histmgr = getattr(
+                    self.model,
+                    getattr(
+                        self.model._meta,
+                        "simple_history_manager_attribute",
+                        "_notthere",
+                    ),
+                    None,
+                )
+
+                # Update core filters for current access,
+                # setting historic filters as required
+                self.core_filters = self.base_core_filters
+                if history and histmgr:
+                    queryset = histmgr.as_of(
+                        getattr(history, "_as_of", history.history_date)
+                    )
+                    # Overwrite rel filters for historic access
+                    self.core_filters = {}
+
+                    if not self.reverse:
+                        # Forward relationship:
+                        # filter by all historic field values in related table
+                        for lh_field, rh_field in self.target_field.related_fields:
+                            core_filter_key = "%s__in" % rh_field.name
+                            self.core_filters[core_filter_key] = (
+                                getattr(history, self.prefetch_cache_name)
+                                .all()
+                                .values(lh_field.attname)
+                            )
+
+                    else:
+                        # Reverse relationship:
+                        # filter by instance field values in m2m history
+                        for lh_field, rh_field in self.source_field.related_fields:
+                            core_filter_key = "{}__{}".format(
+                                getattr(histmgr.model, self.query_field_name)
+                                .model._meta.get_field("history")
+                                .remote_field.name,
+                                lh_field.name,
+                            )
+                            self.core_filters[core_filter_key] = getattr(
+                                self.instance, rh_field.attname
+                            )
+
+                return super()._apply_rel_filters(queryset)
+
+        return HistoricManyRelatedManager
+
+
+class HistoricManyToManyField(models.ManyToManyField):
+    """
+    Allows many-to-many fields to work properly from a historic instance.
+
+    If you use as_of queries to extract historical instances from
+    a model, and you have other models that are related by a many-to-many relationship
+    and also historic, changing them to a HistoricManyToManyField
+    field type will allow you to naturally cross the relationship
+    boundary at the same point in time as the origin instance.
+
+    A historic instance maintains an attribute ("_historic") when
+    it is historic, holding the historic record instance and the
+    timepoint used to query it ("_as_of"). HistoricManyToManyField
+    looks for this and uses an as_of query against the related
+    object so the relationship is assessed at the same timepoint.
+    """
+
+    def contribute_to_class(self, cls, name, **kwargs):
+        super().contribute_to_class(cls, name, **kwargs)
+
+        # Overwrite manytomany descriptor
+        setattr(
+            cls,
+            self.name,
+            HistoricManyToManyDescriptor(self.remote_field, reverse=False),
+        )
+
+    def contribute_to_related_class(self, cls, related):
+        super().contribute_to_related_class(cls, related)
+
+        # Overwrite manytomany descriptor, if it exists
+        if hasattr(cls, related.get_accessor_name() or "_notthere"):
+            setattr(
+                cls,
+                related.get_accessor_name(),
+                HistoricManyToManyDescriptor(self.remote_field, reverse=True),
+            )
 
 
 def is_historic(instance):
