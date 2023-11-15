@@ -13,6 +13,7 @@ from simple_history.manager import HistoricalQuerySet, HistoryManager
 from simple_history.models import (
     HistoricalRecords,
     HistoricForeignKey,
+    HistoricManyToManyField,
     HistoricOneToOneField,
 )
 
@@ -145,7 +146,7 @@ class PollWithHistoricalSessionAttr(models.Model):
 class PollWithManyToMany(models.Model):
     question = models.CharField(max_length=200)
     pub_date = models.DateTimeField("date published")
-    places = models.ManyToManyField("Place")
+    places = HistoricManyToManyField("Place")
 
     history = HistoricalRecords(m2m_fields=[places])
 
@@ -153,7 +154,7 @@ class PollWithManyToMany(models.Model):
 class PollWithManyToManyCustomHistoryID(models.Model):
     question = models.CharField(max_length=200)
     pub_date = models.DateTimeField("date published")
-    places = models.ManyToManyField("Place")
+    places = HistoricManyToManyField("Place")
 
     history = HistoricalRecords(
         m2m_fields=[places], history_id_field=models.UUIDField(default=uuid.uuid4)
@@ -193,7 +194,7 @@ class HistoricalRecordsWithExtraFieldM2M(HistoricalRecords):
 class PollWithManyToManyWithIPAddress(models.Model):
     question = models.CharField(max_length=200)
     pub_date = models.DateTimeField("date published")
-    places = models.ManyToManyField("Place")
+    places = HistoricManyToManyField("Place")
 
     history = HistoricalRecordsWithExtraFieldM2M(
         m2m_fields=[places], m2m_bases=[IPAddressHistoricalModel]
@@ -203,9 +204,9 @@ class PollWithManyToManyWithIPAddress(models.Model):
 class PollWithSeveralManyToMany(models.Model):
     question = models.CharField(max_length=200)
     pub_date = models.DateTimeField("date published")
-    places = models.ManyToManyField("Place", related_name="places_poll")
-    restaurants = models.ManyToManyField("Restaurant", related_name="restaurants_poll")
-    books = models.ManyToManyField("Book", related_name="books_poll")
+    places = HistoricManyToManyField("Place", related_name="places_poll")
+    restaurants = HistoricManyToManyField("Restaurant", related_name="restaurants_poll")
+    books = HistoricManyToManyField("Book", related_name="books_poll")
 
     history = HistoricalRecords(m2m_fields=[places, restaurants, books])
 
@@ -213,7 +214,7 @@ class PollWithSeveralManyToMany(models.Model):
 class PollParentWithManyToMany(models.Model):
     question = models.CharField(max_length=200)
     pub_date = models.DateTimeField("date published")
-    places = models.ManyToManyField("Place")
+    places = HistoricManyToManyField("Place")
 
     history = HistoricalRecords(
         m2m_fields=[places],
@@ -225,19 +226,19 @@ class PollParentWithManyToMany(models.Model):
 
 
 class PollChildBookWithManyToMany(PollParentWithManyToMany):
-    books = models.ManyToManyField("Book", related_name="books_poll_child")
+    books = HistoricManyToManyField("Book", related_name="books_poll_child")
     _history_m2m_fields = ["books"]
 
 
 class PollChildRestaurantWithManyToMany(PollParentWithManyToMany):
-    restaurants = models.ManyToManyField(
+    restaurants = HistoricManyToManyField(
         "Restaurant", related_name="restaurants_poll_child"
     )
     _history_m2m_fields = [restaurants]
 
 
 class PollWithSelfManyToMany(models.Model):
-    relations = models.ManyToManyField("self")
+    relations = HistoricManyToManyField("self")
     history = HistoricalRecords(m2m_fields=[relations])
 
 
@@ -897,13 +898,13 @@ class ManyToManyModelOther(models.Model):
 
 class BulkCreateManyToManyModel(models.Model):
     name = models.CharField(max_length=15, unique=True)
-    other = models.ManyToManyField(ManyToManyModelOther)
+    other = HistoricManyToManyField(ManyToManyModelOther)
     history = HistoricalRecords()
 
 
 class ModelWithExcludedManyToMany(models.Model):
     name = models.CharField(max_length=15, unique=True)
-    other = models.ManyToManyField(ManyToManyModelOther)
+    other = HistoricManyToManyField(ManyToManyModelOther)
     history = HistoricalRecords(excluded_fields=["other"])
 
 
@@ -1042,3 +1043,23 @@ class TestHistoricParticipanToHistoricOrganizationOneToOne(models.Model):
         related_name="historic_participant",
     )
     history = HistoricalRecords()
+
+
+# Test classes for HistoricManyToManyField
+class TestManyToManyRightHistoric(models.Model):
+    name = models.CharField(max_length=15, unique=True)
+    history = HistoricalRecords()
+
+
+class TestManyToManyLeftHistoricToRightHistoric(models.Model):
+    name = models.CharField(max_length=15, unique=True)
+    rights = HistoricManyToManyField(TestManyToManyRightHistoric, related_name="lefts")
+    history = HistoricalRecords()
+    _history_m2m_fields = [rights]
+
+
+class TestManyToManyLeftHistoricToRightHistoricNoReverse(models.Model):
+    name = models.CharField(max_length=15, unique=True)
+    rights = HistoricManyToManyField(TestManyToManyRightHistoric, related_name="+")
+    history = HistoricalRecords()
+    _history_m2m_fields = [rights]
