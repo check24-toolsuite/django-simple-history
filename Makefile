@@ -27,18 +27,18 @@ documentation:
 dist: clean
 	pip install -U build
 	python -m build
-	for file in dist/* ; do gpg --detach-sign -a "$$file" ; done
+	#for file in dist/* ; do gpg --detach-sign -a "$$file" ; done
 	ls -l dist
 
 test-release: dist
 	pip install -U twine
 	gpg --detach-sign -a dist/*
-	twine upload -r pypitest dist/*
+	#twine upload -r pypitest dist/*
 
 release: dist
 	pip install -U twine
-	gpg --detach-sign -a dist/*
-	twine upload dist/*
+	#gpg --detach-sign -a dist/*
+	twine upload --repository-url "https://nexus.ts.tool.check24.de/repository/pypi-internal/" dist/*
 
 format:
 	tox -e format
