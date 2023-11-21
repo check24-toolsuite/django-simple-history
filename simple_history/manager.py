@@ -109,7 +109,8 @@ class HistoricalQuerySet(QuerySet):
             self._result_cache = [item.instance for item in self._result_cache]
             for item in self._result_cache:
                 historic = getattr(item, SIMPLE_HISTORY_REVERSE_ATTR_NAME)
-                setattr(historic, "_as_of", self._as_of)
+                if self._as_of is not None:
+                    setattr(historic, "_as_of", self._as_of)
 
 
 class HistoryManager(models.Manager):
