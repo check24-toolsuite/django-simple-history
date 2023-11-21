@@ -654,13 +654,22 @@ class HistoricalRecords:
         """
         return get_change_reason_from_object(instance)
 
-    def m2m_changed(self, instance, action, attr, pk_set, reverse, **_):
+    def m2m_changed(self, instance, action, pk_set, reverse, using, model, **_):
         if hasattr(instance, "skip_history_when_saving"):
             return
 
         if action in ("post_add", "post_remove", "post_clear"):
             # It should be safe to ~ this since the row must exist to modify m2m on it
-            self.create_historical_record(instance, "~")
+            if reverse:
+                if action == "post_clear":
+                    # pk_set is None in post_clear, so we cannot update the history
+                    return
+                # Reverse relation - model is the one with the m2m field
+                for instance in model._default_manager.filter(pk__in=pk_set):
+                    self.create_historical_record(instance, "~", using=using)
+            else:
+                # Forward relation - instance is the one with the m2m field
+                self.create_historical_record(instance, "~", using=using)
 
     def create_historical_record_m2ms(self, history_instance, instance):
         for field in history_instance._history_m2m_fields:
